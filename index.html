@@ -103,9 +103,14 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const GIFT='<svg viewBox="0 0 100 50" aria-hidden="true"><path d="M50 48C38 18 8 14 12 32c3 12 24 14 38 16zM50 48C62 18 92 14 88 32c-3 12-24 14-38 16z" fill="none" stroke="#e7b84a" stroke-width="8" stroke-linejoin="round"/></svg>';
 
-let st={title:'',people:[],pairs:null,sent:[]};
+let st={title:'',people:[],pairs:null,sent:[],topic:'',status:{}};
 try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.people))st=Object.assign(st,s)}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}};
+const stat=n=>(st.status||{})[n]||0;
+/* Avisos con ntfy.sh: solo se envía quién abrió su link, nunca a quién le tocó */
+const MSG1=g=>`${g} abrió su link`,MSG2=g=>`${g} ya vio a su amigo secreto`;
+function notify(topic,g,level){if(!topic)return;
+  try{fetch('https://ntfy.sh/',{method:'POST',keepalive:true,body:JSON.stringify({topic,title:'Amigo secreto',message:level>1?MSG2(g):MSG1(g),tags:['gift'],priority:level>1?4:3})}).catch(()=>{})}catch(e){}}
 
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on'),1900)}
 function ask(title,text,fn){$('cTitle').textContent=title;$('cText').textContent=text;$('confirm').classList.add('on');
@@ -114,7 +119,7 @@ async function copy(t,ok){try{await navigator.clipboard.writeText(t);toast(ok||'
 
 /* Enlace por persona: el par se codifica (no se ve a simple vista) en el #hash, solo letras y números */
 const enc=new TextEncoder(),dec=new TextDecoder();
-function token(g,r){const d=enc.encode(JSON.stringify([g,r,st.title]));const k=crypto.getRandomValues(new Uint8Array(4));
+function token(g,r){const d=enc.encode(JSON.stringify([g,r,st.title,st.topic]));const k=crypto.getRandomValues(new Uint8Array(4));
   return 's'+[...k,...d.map((b,i)=>b^k[i%4]^(i*31&255))].map(b=>b.toString(16).padStart(2,'0')).join('')}
 function untoken(h){if(!/^s([0-9a-f]{2}){5,}$/.test(h))return null;const b=h.slice(1).match(/../g).map(x=>parseInt(x,16));const k=b.slice(0,4);
   try{return JSON.parse(dec.decode(new Uint8Array(b.slice(4).map((v,i)=>v^k[i%4]^(i*31&255)))))}catch(e){return null}}
@@ -123,7 +128,9 @@ const msgFor=p=>`¡Hola ${p}! Ya hicimos el sorteo del amigo secreto${st.title?'
 
 /* ---------- Vista del participante ---------- */
 function showReveal(data){
-  const [g,r,t]=data;
+  const [g,r,t,topic]=data;
+  let once=true;try{const k='visto-'+location.hash;once=!sessionStorage.getItem(k);sessionStorage.setItem(k,'1')}catch(e){}
+  if(once)notify(topic,g,1);
   $('app').innerHTML=`<div class="reveal"><div class="wrap">
     <p>${t?esc(t):'Amigo secreto'}</p>
     <h1>Hola, ${esc(g)}</h1>
@@ -131,7 +138,7 @@ function showReveal(data){
     <button class="box" id="box" aria-label="Abrir regalo"><span class="lid"></span>${GIFT}<span class="body"></span></button>
     <div id="res" style="width:100%"></div>
   </div></div>`;
-  $('box').addEventListener('click',()=>{if($('box').classList.contains('open'))return;$('box').classList.add('open');$('rHint').textContent='';
+  $('box').addEventListener('click',()=>{if($('box').classList.contains('open'))return;$('box').classList.add('open');$('rHint').textContent='';notify(topic,g,2);
     setTimeout(()=>{$('res').innerHTML=`<div class="card to"><p>Tu amigo secreto es</p><div class="who">${esc(r)}</div><p>Guarda el secreto hasta el día del intercambio 🤫</p></div>`},350)});
 }
 
@@ -150,35 +157,38 @@ function orgSetup(n){
   </section>
   <section class="card">
     <h2>Participantes</h2>
-    <p class="hint">El correo es opcional: sirve para abrir el mensaje listo en tu app de correo.</p>
+    <p class="hint">Escribe un nombre y pulsa Agregar.</p>
     <form class="add" id="fAdd">
-      <input id="inName" placeholder="Nombre" autocomplete="off" autocapitalize="words" enterkeyhint="next" required>
-      <input id="inMail" type="email" placeholder="Correo (opcional)" autocomplete="off" inputmode="email" enterkeyhint="done">
+      <input id="inName" placeholder="Nombre" autocomplete="off" autocapitalize="words" enterkeyhint="done" required>
       <button type="submit">Agregar</button>
     </form>
     <p class="err" id="err" role="alert"></p>
-    ${n?`<ul class="people">${st.people.map((p,i)=>`<li><span class="nm">${esc(p.n)}${p.e?`<span class="em">${esc(p.e)}</span>`:''}</span><button class="x" data-del="${i}" aria-label="Quitar ${esc(p.n)}">×</button></li>`).join('')}</ul>`:'<p class="empty">Todavía no hay participantes.</p>'}
+    ${n?`<ul class="people">${st.people.map((p,i)=>`<li><span class="nm">${esc(p.n)}</span><button class="x" data-del="${i}" aria-label="Quitar ${esc(p.n)}">×</button></li>`).join('')}</ul>`:'<p class="empty">Todavía no hay participantes.</p>'}
     <p class="count">${n?`${n} participante${n>1?'s':''}`:''}${n&&n<3?' · se necesitan al menos 3':''}</p>
   </section>
   <button class="big red" id="bDraw" ${n<3?'disabled':''}>Hacer el sorteo</button>`;
 }
 function orgResults(){
-  const sent=st.sent.length,n=st.people.length;
+  const n=st.people.length,seen=st.people.filter(p=>stat(p.n)>=2).length,opened=st.people.filter(p=>stat(p.n)>=1).length;
+  const topic=st.topic?`https://ntfy.sh/${st.topic}`:'';
   return `<section class="card">
     <h2>${st.title?esc(st.title):'Links para enviar'}</h2>
-    <p class="hint">${sent} de ${n} enviados. Cada link revela solo el amigo secreto de esa persona.</p>
-    <ul class="links">${st.people.map((p,i)=>{const ok=st.sent.includes(p.n);
-      const mail=p.e?`mailto:${encodeURIComponent(p.e)}?subject=${encodeURIComponent('Tu amigo secreto')}&body=${encodeURIComponent(msgFor(p.n))}`:'';
-      return `<li><div class="top"><span class="nm">${esc(p.n)}</span><span class="badge ${ok?'ok':''}">${ok?'Enviado':'Pendiente'}</span></div>
-      ${p.e?`<span style="font-size:13px;color:var(--soft);overflow-wrap:anywhere">${esc(p.e)}</span>`:''}
+    <p class="hint">${opened} de ${n} abrieron su link · ${seen} ya vieron a su amigo secreto. El estado se actualiza solo.</p>
+    <ul class="links">${st.people.map((p,i)=>{const s=stat(p.n),sent=st.sent.includes(p.n);
+      const lab=s>=2?'Ya lo vio':s>=1?'Abrió el link':sent?'Enviado':'Pendiente';
+      return `<li><div class="top"><span class="nm">${esc(p.n)}</span><span class="badge ${s>=1?'ok':''}">${lab}</span></div>
       <div class="acts">
-        ${p.e?`<a class="btn" href="${esc(mail)}" data-sent="${i}">Correo</a>`:''}
-        <a class="btn ${p.e?'alt':''}" href="https://api.whatsapp.com/send?text=${encodeURIComponent(msgFor(p.n))}" target="_blank" rel="noopener" data-sent="${i}">WhatsApp</a>
+        <a class="btn" href="https://api.whatsapp.com/send?text=${encodeURIComponent(msgFor(p.n))}" target="_blank" rel="noopener" data-sent="${i}">WhatsApp</a>
         <button class="alt" data-msg="${i}">Copiar mensaje</button>
         <button class="alt" data-link="${i}">Copiar link</button>
       </div></li>`}).join('')}</ul>
-    <p class="note">Si “Correo” no abre tu app, usa “Copiar mensaje” y pégalo en un correo nuevo.</p>
   </section>
+  ${topic?`<section class="card">
+    <h2>Avisos en tu teléfono</h2>
+    <p class="hint">Para recibir una notificación cuando alguien abra su link, instala la app gratuita <b>ntfy</b> (App Store o Google Play), pulsa “+” y suscríbete a este tema:</p>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><code style="flex:1 1 200px;background:var(--chip);border-radius:12px;padding:12px;font-size:14px">${esc(st.topic)}</code><button class="alt" id="bTopic">Copiar tema</button></div>
+    <p class="note">También puedes ver los avisos en el navegador: <a href="${esc(topic)}" target="_blank" rel="noopener" style="color:inherit;overflow-wrap:anywhere">${esc(topic)}</a>. Los avisos solo dicen quién abrió su link, nunca a quién le tocó. No compartas este tema.</p>
+  </section>`:''}
   <section class="card">
     <h2>Opciones</h2>
     <div class="tools">
@@ -197,19 +207,21 @@ function draw(){
   /* verificación: nadie se regala a sí mismo y cada quien recibe exactamente un regalo */
   const recs=new Set(P.map(g=>m[g].r));
   if(P.some(g=>m[g].r===g)||recs.size!==P.length){toast('Error en el sorteo, intenta de nuevo');return}
+  st.topic='amigo-secreto-'+[...crypto.getRandomValues(new Uint8Array(10))].map(b=>b.toString(16).padStart(2,'0')).join('');
   for(const g of P)m[g].t=token(g,m[g].r);
-  st.pairs=m;st.sent=[];save();renderOrg();toast('¡Sorteo listo!');scrollTo(0,0);
+  st.pairs=m;st.sent=[];st.status={};save();renderOrg();toast('¡Sorteo listo!');scrollTo(0,0);
 }
 function bindOrg(){
   const t=$('tTitle');if(t)t.addEventListener('input',()=>{st.title=t.value.trim();save()});
   const f=$('fAdd');
-  if(f)f.addEventListener('submit',e=>{e.preventDefault();const nm=$('inName').value.trim().replace(/\s+/g,' '),em=$('inMail').value.trim();
+  if(f)f.addEventListener('submit',e=>{e.preventDefault();const nm=$('inName').value.trim().replace(/\s+/g,' ');
     if(!nm)return;
     if(st.people.some(p=>p.n.toLowerCase()===nm.toLowerCase())){$('err').textContent=`“${nm}” ya está en la lista.`;return}
-    st.people.push({n:nm,e:em});save();renderOrg();$('inName').focus()});
+    st.people.push({n:nm});save();renderOrg();$('inName').focus()});
   const b=$('bDraw');if(b)b.addEventListener('click',draw);
   const rd=$('bRedo');if(rd)rd.addEventListener('click',()=>ask('¿Volver a sortear?','Todas las asignaciones cambiarán y tendrás que enviar los links nuevos a todos.',draw));
-  const rs=$('bReset');if(rs)rs.addEventListener('click',()=>ask('¿Editar participantes?','Se borrará el sorteo actual. Después tendrás que sortear y enviar los links otra vez.',()=>{st.pairs=null;st.sent=[];save();renderOrg()}));
+  const rs=$('bReset');if(rs)rs.addEventListener('click',()=>ask('¿Editar participantes?','Se borrará el sorteo actual. Después tendrás que sortear y enviar los links otra vez.',()=>{st.pairs=null;st.sent=[];st.topic='';st.status={};save();renderOrg()}));
+  const bt=$('bTopic');if(bt)bt.addEventListener('click',()=>copy(st.topic,'Tema copiado'));
 }
 $('app').addEventListener('click',e=>{
     if(!document.querySelector('main'))return;
@@ -220,10 +232,23 @@ $('app').addEventListener('click',e=>{
 });
 function mark(i){const n=st.people[i].n;if(!st.sent.includes(n)){st.sent.push(n);save();setTimeout(renderOrg,400)}}
 
+/* El panel del organizador consulta los avisos recientes para actualizar los estados */
+async function poll(){
+  if(!st.pairs||!st.topic||document.visibilityState==='hidden'||location.hash.length>2)return;
+  try{const t=await (await fetch(`https://ntfy.sh/${encodeURIComponent(st.topic)}/json?poll=1&since=all`)).text();
+    let changed=false;st.status=st.status||{};
+    for(const line of t.split('\n')){if(!line.trim())continue;let ev;try{ev=JSON.parse(line)}catch(e){continue}
+      if(ev.event!=='message'||typeof ev.message!=='string')continue;
+      for(const p of st.people){const lv=ev.message===MSG2(p.n)?2:ev.message===MSG1(p.n)?1:0;
+        if(lv>stat(p.n)){st.status[p.n]=lv;changed=true}}}
+    if(changed){save();if(!document.querySelector('details[open]')&&!$('confirm').classList.contains('on'))renderOrg()}
+  }catch(e){}
+}
+setInterval(poll,15000);document.addEventListener('visibilitychange',poll);
 function route(){
   const h=location.hash.slice(1);const data=h&&untoken(h);
   if(data&&Array.isArray(data)&&data.length>=2){showReveal(data);return}
-  renderOrg();
+  renderOrg();poll();
 }
 addEventListener('hashchange',route);
 route();
