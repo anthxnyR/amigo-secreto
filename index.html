@@ -51,6 +51,7 @@ form.add{display:grid;gap:8px}
 .links .nm{font-weight:800;font-size:17px;overflow-wrap:anywhere}
 .badge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--chip);color:var(--soft);white-space:nowrap}
 .badge.ok{background:#1c7a52;color:#fff}
+.badge.open{background:var(--gold);color:#10241b}
 .acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
 .acts .btn,.acts button{min-height:44px;font-size:14px}
 .tools{display:grid;gap:8px;margin-top:16px}
@@ -170,25 +171,19 @@ function orgSetup(n){
 }
 function orgResults(){
   const n=st.people.length,seen=st.people.filter(p=>stat(p.n)>=2).length,opened=st.people.filter(p=>stat(p.n)>=1).length;
-  const topic=st.topic?`https://ntfy.sh/${st.topic}`:'';
   return `<section class="card">
     <h2>${st.title?esc(st.title):'Links para enviar'}</h2>
     <p class="hint">${opened} de ${n} abrieron su link · ${seen} ya vieron a su amigo secreto. El estado se actualiza solo.</p>
     <ul class="links">${st.people.map((p,i)=>{const s=stat(p.n),sent=st.sent.includes(p.n);
       const lab=s>=2?'Ya lo vio':s>=1?'Abrió el link':sent?'Enviado':'Pendiente';
-      return `<li><div class="top"><span class="nm">${esc(p.n)}</span><span class="badge ${s>=1?'ok':''}">${lab}</span></div>
+      return `<li><div class="top"><span class="nm">${esc(p.n)}</span><span class="badge ${s>=2?'ok':s>=1?'open':''}">${lab}</span></div>
       <div class="acts">
         <a class="btn" href="https://api.whatsapp.com/send?text=${encodeURIComponent(msgFor(p.n))}" target="_blank" rel="noopener" data-sent="${i}">WhatsApp</a>
         <button class="alt" data-msg="${i}">Copiar mensaje</button>
         <button class="alt" data-link="${i}">Copiar link</button>
       </div></li>`}).join('')}</ul>
   </section>
-  ${topic?`<section class="card">
-    <h2>Avisos en tu teléfono</h2>
-    <p class="hint">Para recibir una notificación cuando alguien abra su link, instala la app gratuita <b>ntfy</b> (App Store o Google Play), pulsa “+” y suscríbete a este tema:</p>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><code style="flex:1 1 200px;background:var(--chip);border-radius:12px;padding:12px;font-size:14px">${esc(st.topic)}</code><button class="alt" id="bTopic">Copiar tema</button></div>
-    <p class="note">También puedes ver los avisos en el navegador: <a href="${esc(topic)}" target="_blank" rel="noopener" style="color:inherit;overflow-wrap:anywhere">${esc(topic)}</a>. Los avisos solo dicen quién abrió su link, nunca a quién le tocó. No compartas este tema.</p>
-  </section>`:''}
+
   <section class="card">
     <h2>Opciones</h2>
     <div class="tools">
@@ -221,7 +216,6 @@ function bindOrg(){
   const b=$('bDraw');if(b)b.addEventListener('click',draw);
   const rd=$('bRedo');if(rd)rd.addEventListener('click',()=>ask('¿Volver a sortear?','Todas las asignaciones cambiarán y tendrás que enviar los links nuevos a todos.',draw));
   const rs=$('bReset');if(rs)rs.addEventListener('click',()=>ask('¿Editar participantes?','Se borrará el sorteo actual. Después tendrás que sortear y enviar los links otra vez.',()=>{st.pairs=null;st.sent=[];st.topic='';st.status={};save();renderOrg()}));
-  const bt=$('bTopic');if(bt)bt.addEventListener('click',()=>copy(st.topic,'Tema copiado'));
 }
 $('app').addEventListener('click',e=>{
     if(!document.querySelector('main'))return;
